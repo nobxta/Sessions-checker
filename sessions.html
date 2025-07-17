@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram Session Checker</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0a0a0a;
+            color: #e5e7eb;
+        }
+        .glow-button {
+            border: 2px solid #8b5cf6;
+            box-shadow: 0 0 10px #8b5cf6, 0 0 20px #8b5cf6;
+            transition: all 0.3s ease;
+        }
+        .glow-button:hover {
+            box-shadow: 0 0 15px #a78bfa, 0 0 30px #a78bfa;
+            background-color: #8b5cf6;
+            color: #ffffff;
+        }
+        .drag-area {
+            border: 3px dashed #8b5cf6;
+            transition: all 0.3s ease;
+        }
+        .drag-area.dragover {
+            background-color: #1f2937;
+            border-color: #a78bfa;
+            box-shadow: 0 0 15px #a78bfa;
+        }
+        .status-good { background-color: #10b981; }
+        .status-frozen { background-color: #8b5cf6; }
+        .status-broken { background-color: #ef4444; }
+        .status-limited { background-color: #f59e0b; }
+        .status-unknown { background-color: #6b7280; }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div id="app" class="w-full max-w-4xl">
+        <!-- Step 1: Upload Page -->
+        <div id="upload-step" class="flex flex-col items-center">
+            <h1 class="text-3xl font-bold text-white mb-6">Telegram Session Checker</h1>
+            <div id="drag-area" class="drag-area w-full h-64 flex flex-col items-center justify-center rounded-lg bg-gray-900">
+                <svg class="w-12 h-12 text-purple-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 0115.9 6M9 19h6m-3-3v6m-3-3h6"></path>
+                </svg>
+                <p class="text-lg text-gray-300">Drop your Telegram sessions here (.session or .zip)</p>
+                <input type="file" id="file-input" multiple accept=".session,.zip" class="hidden">
+            </div>
+            <button id="next-button" class="glow-button mt-6 px-6 py-3 rounded-lg text-lg hidden">Next Step</button>
+        </div>
+
+        <!-- Step 2: Scan Summary -->
+        <div id="summary-step" class="hidden flex flex-col items-center">
+            <h1 class="text-3xl font-bold text-white mb-6">Session Summary</h1>
+            <div class="w-full bg-gray-900 rounded-lg p-6 shadow-lg">
+                <p id="session-count" class="text-lg text-gray-300 mb-4">Available Sessions Found: 0</p>
+                <div class="flex space-x-4">
+                    <button id="check-button" class="glow-button px-6 py-3 rounded-lg text-lg">Check Sessions</button>
+                    <button id="back-to-upload" class="glow-button px-6 py-3 rounded-lg text-lg">Back</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: Results Table -->
+        <div id="results-step" class="hidden flex flex-col items-center">
+            <h1 class="text-3xl font-bold text-white mb-6">Session Health Results</h1>
+            <div class="w-full bg-gray-900 rounded-lg p-6 shadow-lg">
+                <div class="flex justify-between mb-4">
+                    <input id="search-input" type="text" placeholder="Search sessions..." class="w-1/3 p-2 rounded-lg bg-gray-800 text-white border border-purple-500">
+                    <button id="export-csv" class="glow-button px-4 py-2 rounded-lg">Export to CSV</button>
+                </div>
+                <div id="progress-bar" class="hidden w-full bg-gray-800 rounded-full h-2 mb-4">
+                    <div id="progress" class="bg-purple-500 h-2 rounded-full" style="width: 0%"></div>
+                </div>
+                <div class="grid grid-cols-4 gap-4 mb-4 text-sm text-gray-400">
+                    <div class="p-2 bg-gray-800 rounded-lg text-center">Total: <span id="total-count">0</span></div>
+                    <div class="p-2 bg-gray-800 rounded-lg text-center">Valid: <span id="valid-count">0</span></div>
+                    <div class="p-2 bg-gray-800 rounded-lg text-center">Broken: <span id="broken-count">0</span></div>
+                    <div class="p-2 bg-gray-800 rounded-lg text-center">Frozen/Limited: <span id="frozen-count">0</span></div>
+                </div>
+                <table class="w-full text-left">
+                    <thead>
+                        <tr class="text-gray-400">
+                            <th class="p-2">Filename</th>
+                            <th class="p-2">Status</th>
+                            <th class="p-2">User ID</th>
+                            <th class="p-2">Phone Number</th>
+                        </tr>
+                    </thead>
+                    <tbody id="results-table" class="text-gray-200"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_ID = '22288217';
+        const API_HASH = 'cb4089d99c03adb6c059aad26f2ff303';
+        let sessions = [];
+        let currentStep = 'upload';
+
+        // Simulate session checking (replace with actual backend API call)
+        async function checkSession(session) {
+            // Simulated Telethon logic based on provided health_single function
+            const statuses = ['good', 'frozen', 'limited', 'broken'];
+            const status = statuses[Math.floor(Math.random() * statuses.length)];
+            let userId = null, phoneNumber = null;
+
+            if (status === 'good' || status === 'limited') {
+                userId = Math.floor(Math.random() * 1000000000);
+                phoneNumber = `+${Math.floor(Math.random() * 10000000000)}`;
+            }
+
+            return {
+                filename: session.name,
+                status: status,
+                userId: userId || 'N/A',
+                phoneNumber: phoneNumber || 'N/A'
+            };
+        }
+
+        // Handle drag and drop
+        const dragArea = document.getElementById('drag-area');
+        const fileInput = document.getElementById('file-input');
+        const nextButton = document.getElementById('next-button');
+
+        dragArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dragArea.classList.add('dragover');
+        });
+
+        dragArea.addEventListener('dragleave', () => {
+            dragArea.classList.remove('dragover');
+        });
+
+        dragArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dragArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            handleFiles(files);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+
+        function handleFiles(files) {
+            sessions = Array.from(files).filter(file => file.name.endsWith('.session') || file.name.endsWith('.zip'));
+            document.getElementById('session-count').textContent = `Available Sessions Found: ${sessions.length}`;
+            nextButton.classList.remove('hidden');
+        }
+
+        // Navigation
+        function showStep(step) {
+            document.getElementById('upload-step').classList.add('hidden');
+            document.getElementById('summary-step').classList.add('hidden');
+            document.getElementById('results-step').classList.add('hidden');
+            document.getElementById(`${step}-step`).classList.remove('hidden');
+            currentStep = step;
+        }
+
+        nextButton.addEventListener('click', () => showStep('summary'));
+
+        document.getElementById('back-to-upload').addEventListener('click', () => {
+            sessions = [];
+            nextButton.classList.add('hidden');
+            showStep('upload');
+        });
+
+        // Check sessions
+        document.getElementById('check-button').addEventListener('click', async () => {
+            showStep('results');
+            const progressBar = document.getElementById('progress-bar');
+            const progress = document.getElementById('progress');
+            progressBar.classList.remove('hidden');
+
+            const resultsTable = document.getElementById('results-table');
+            resultsTable.innerHTML = '';
+            let validCount = 0, brokenCount = 0, frozenCount = 0;
+
+            for (let i = 0; i < sessions.length; i++) {
+                const result = await checkSession(sessions[i]);
+                progress.style.width = `${((i + 1) / sessions.length) * 100}%`;
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="p-2">${result.filename}</td>
+                    <td class="p-2">
+                        <span class="px-2 py-1 rounded text-white status-${result.status.toLowerCase()}">
+                            ${result.status.charAt(0).toUpperCase() + result.status.slice(1)}
+                        </span>
+                    </td>
+                    <td class="p-2">${result.userId}</td>
+                    <td class="p-2">${result.phoneNumber}</td>
+                `;
+                resultsTable.appendChild(row);
+
+                if (result.status === 'good') validCount++;
+                else if (result.status === 'broken') brokenCount++;
+                else frozenCount++;
+            }
+
+            document.getElementById('total-count').textContent = sessions.length;
+            document.getElementById('valid-count').textContent = validCount;
+            document.getElementById('broken-count').textContent = brokenCount;
+            document.getElementById('frozen-count').textContent = frozenCount;
+        });
+
+        // Search functionality
+        document.getElementById('search-input').addEventListener('input', (e) => {
+            const search = e.target.value.toLowerCase();
+            const rows = document.querySelectorAll('#results-table tr');
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(search) ? '' : 'none';
+            });
+        });
+
+        // Export to CSV
+        document.getElementById('export-csv').addEventListener('click', () => {
+            const rows = document.querySelectorAll('#results-table tr');
+            let csv = 'Filename,Status,User ID,Phone Number\n';
+            rows.forEach(row => {
+                const cols = row.querySelectorAll('td');
+                csv += `${cols[0].textContent},${cols[1].textContent.trim()},${cols[2].textContent},${cols[3].textContent}\n`;
+            });
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'session_results.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+    </script>
+</body>
+</html>
